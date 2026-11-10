@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SignBridge Pro - Video Call with Sign-to-Audio</title>
+  
+  <!-- MediaPipe CDN scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --surface: #1e293b;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #38bdf8;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Navigation */
+    header {
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #111827;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: 1.15rem;
+      letter-spacing: -0.02em;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #34d399;
+      background: rgba(52, 211, 153, 0.1);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-weight: 500;
+      transition: all 0.3s;
+    }
+
+    .status-badge.ended {
+      color: var(--danger);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: currentColor;
+      border-radius: 50%;
+      animation: pulse 1.8s infinite;
+    }
+
+    .status-badge.ended .dot {
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Main Container (Video + Sidebar) */
+    .app-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Video Grid */
+    main {
+      flex: 1;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      width: 100%;
+    }
+
+    .video-card {
+      position: relative;
+      background: var(--surface);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--card-border);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .cam-off-placeholder {
+      position: absolute;
+      inset: 0;
+      background: var(--surface);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      gap: 12px;
+    }
+
+    .remote-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .avatar {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2rem;
+      font-weight: bold;
+    }
+
+    .label {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    /* Real-Time Subtitle Pill */
+    .subtitle-overlay {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      backdrop-filter: blur(12px);
+      padding: 10px 24px;
+      border-radius: 9999px;
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--primary);
+      pointer-events: none;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      white-space: nowrap;
+    }
+
+    /* Side Panel / Sign Guide */
+    aside {
+      width: 320px;
+      background: #111827;
+      border-left: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--card-border);
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--primary);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .signs-list {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sign-item {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      border-left: 3px solid transparent;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sign-item.active {
+      border-left-color: var(--primary);
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--primary);
+    }
+
+    .sign-item code {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Call Ended Overlay Screen */
+    .call-ended-screen {
+      position: absolute;
+      inset: 0;
+      background: var(--bg-dark);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      gap: 16px;
+    }
+
+    .call-ended-card {
+      background: var(--surface);
+      border: 1px solid var(--card-border);
+      padding: 40px;
+      border-radius: 20px;
+      text-align: center;
+      max-width: 440px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .call-ended-card h2 {
+      font-size: 1.6rem;
+      margin-bottom: 8px;
+    }
+
+    .call-ended-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+    }
+
+    .rejoin-btn {
+      background: var(--primary);
+      color: #0f172a;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 9999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .rejoin-btn:hover {
+      opacity: 0.9;
+    }
+
+    /* Footer Controls */
+    footer {
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      background: #111827;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .control-btn {
+      background: #334155;
+      border: none;
+      color: white;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.25rem;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .control-btn:hover {
+      background: #475569;
+    }
+
+    .control-btn:active {
+      transform: scale(0.95);
+    }
+
+    .control-btn.danger {
+      background: var(--danger);
+    }
+
+    .control-btn.danger:hover {
+      background: #dc2626;
+    }
+
+    .control-btn.off {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header>
+    <div class="brand">
+      <span>🤟</span>
+      <span>SignBridge Video Call</span>
+    </div>
+    <div class="status-badge" id="callStatusBadge">
+      <span class="dot"></span>
+      <span id="callStatusText">Call in Progress</span>
+    </div>
+  </header>
+
+  <!-- App Stage -->
+  <div class="app-body">
+    <!-- Call Ended Overlay -->
+    <div class="call-ended-screen" id="callEndedScreen">
+      <div class="call-ended-card">
+        <div style="font-size: 3rem; margin-bottom: 12px;">👋</div>
+        <h2>You left the meeting</h2>
+        <p>Your camera and speech conversion have been stopped.</p>
+        <button class="rejoin-btn" id="rejoinBtn">Rejoin Call</button>
+      </div>
+    </div>
+
+    <main>
+      <!-- Self / Signer Camera -->
+      <div class="video-card">
+        <video id="webcam" autoplay playsinline></video>
+        <div class="cam-off-placeholder" id="camOffPlaceholder">
+          <div class="avatar" style="background: #475569;">📷</div>
+          <p>Camera is off</p>
+        </div>
+        <div id="subtitle" class="subtitle-overlay">Show your hand to begin signing...</div>
+        <div class="label">You (Signer)</div>
+      </div>
+
+      <!-- Simulated Remote User -->
+      <div class="video-card">
+        <div class="remote-placeholder">
+          <div class="avatar">R</div>
+          <p>Rachel (Listener)</p>
+        </div>
+        <div class="label">Rachel</div>
+      </div>
+    </main>
+
+    <!-- Sign Dictionary Cheat Sheet -->
+    <aside>
+      <div class="sidebar-header">
+        <span>Supported Signs</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">16 signs</span>
+      </div>
+      <div class="signs-list" id="signsList"></div>
+    </aside>
+  </div>
+
+  <!-- Bottom Call Bar -->
+  <footer>
+    <button class="control-btn" id="micBtn" title="Mute/Unmute Speech">🎤</button>
+    <button class="control-btn" id="camBtn" title="Toggle Camera">📷</button>
+    <button class="control-btn danger" id="endCallBtn" title="End Call">📞</button>
+  </footer>
+
+  <script>
+    const videoElement = document.getElementById('webcam');
+    const subtitle = document.getElementById('subtitle');
+    const signsListElement = document.getElementById('signsList');
+    const callEndedScreen = document.getElementById('callEndedScreen');
+    const rejoinBtn = document.getElementById('rejoinBtn');
+    const endCallBtn = document.getElementById('endCallBtn');
+    const micBtn = document.getElementById('micBtn');
+    const camBtn = document.getElementById('camBtn');
+    const camOffPlaceholder = document.getElementById('camOffPlaceholder');
+    const callStatusBadge = document.getElementById('callStatusBadge');
+    const callStatusText = document.getElementById('callStatusText');
+
+    let isCallActive = true;
+    let isCameraEnabled = true;
+    let isMicMuted = false;
+    let cameraInstance = null;
+    let localStream = null;
+
+    // Supported signs catalog
+    const SIGN_DICTIONARY = [
+      { id: "HELLO", text: "Hello / Goodbye", hint: "Open 5 fingers" },
+      { id: "YES", text: "Yes / Good", hint: "Thumbs up" },
+      { id: "NO_DISLIKE", text: "Dislike / No", hint: "Thumbs down" },
+      { id: "OK", text: "Okay / Fine", hint: "Thumb + Index circle (ASL 'F')" },
+      { id: "LOVE", text: "I love you", hint: "Thumb + Index + Pinky (ASL 'ILY')" },
+      { id: "CALL", text: "Call me", hint: "Thumb + Pinky (ASL 'Y')" },
+      { id: "PEACE", text: "Peace / Two", hint: "Index + Middle V shape" },
+      { id: "ROCK", text: "Rock on", hint: "Index + Pinky extended" },
+      { id: "ONE", text: "One / Pointing", hint: "Index finger only" },
+      { id: "THREE", text: "Three (W)", hint: "Index + Middle + Ring up" },
+      { id: "FOUR", text: "Four", hint: "4 fingers up, thumb folded" },
+      { id: "LETTER_L", text: "Letter L / Later", hint: "Thumb & Index 90° angle" },
+      { id: "LETTER_I", text: "I / Me", hint: "Pinky finger only (ASL 'I')" },
+      { id: "LITTLE", text: "A little bit", hint: "Index & thumb pinch together" },
+      { id: "STOP", text: "Stop / Wait", hint: "Closed fist" },
+      { id: "LETTER_C", text: "Letter C", hint: "Fingers curved like a C" }
+    ];
+
+    // Populate the sidebar guide
+    SIGN_DICTIONARY.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'sign-item';
+      el.id = `sign-${item.id}`;
+      el.innerHTML = `<strong>${item.text}</strong><code>${item.hint}</code>`;
+      signsListElement.appendChild(el);
+    });
+
+    let lastSpokenText = "";
+    let lastSpokenTime = 0;
+
+    // TTS Output
+    function speak(signObj) {
+      if (!isCallActive || isMicMuted) return;
+
+      const now = Date.now();
+      if (signObj.text === lastSpokenText && now - lastSpokenTime < 2500) return;
+
+      lastSpokenText = signObj.text;
+      lastSpokenTime = now;
+
+      subtitle.innerText = `🗣️ "${signObj.text}"`;
+      document.querySelectorAll('.sign-item').forEach(el => el.classList.remove('active'));
+      const activeEl = document.getElementById(`sign-${signObj.id}`);
+      if (activeEl) activeEl.classList.add('active');
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(signObj.text);
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    function dist(p1, p2) {
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
+    function classifyGesture(landmarks) {
+      const wrist = landmarks[0];
+      const thumbTip = landmarks[4];
+      const thumbIp = landmarks[3];
+      const indexTip = landmarks[8];
+      const indexPip = landmarks[6];
+      const middleTip = landmarks[12];
+      const middlePip = landmarks[10];
+      const ringTip = landmarks[16];
+      const ringPip = landmarks[14];
+      const pinkyTip = landmarks[20];
+      const pinkyPip = landmarks[18];
+
+      const isIndexUp = dist(indexTip, wrist) > dist(indexPip, wrist) * 1.15;
+      const isMiddleUp = dist(middleTip, wrist) > dist(middlePip, wrist) * 1.15;
+      const isRingUp = dist(ringTip, wrist) > dist(ringPip, wrist) * 1.15;
+      const isPinkyUp = dist(pinkyTip, wrist) > dist(pinkyPip, wrist) * 1.15;
+      const isThumbExtended = dist(thumbTip, wrist) > dist(thumbIp, wrist) * 1.15;
+      const isThumbIndexPinching = dist(thumbTip, indexTip) < 0.055;
+
+      if (isThumbIndexPinching && isMiddleUp && isRingUp && isPinkyUp) return SIGN_DICTIONARY.find(s => s.id === "OK");
+      if (isThumbIndexPinching && !isMiddleUp && !isRingUp && !isPinkyUp) return SIGN_DICTIONARY.find(s => s.id === "LITTLE");
+      if (isThumbExtended && isIndexUp && isMiddleUp && isRingUp && isPinkyUp) return SIGN_DICTIONARY.find(s => s.id === "HELLO");
+      if (!isThumbExtended && isIndexUp && isMiddleUp && isRingUp && isPinkyUp) return SIGN_DICTIONARY.find(s => s.id === "FOUR");
+      if (isIndexUp && isMiddleUp && isRingUp && !isPinkyUp) return SIGN_DICTIONARY.find(s => s.id === "THREE");
+      if (isIndexUp && isMiddleUp && !isRingUp && !isPinkyUp && !isThumbExtended) return SIGN_DICTIONARY.find(s => s.id === "PEACE");
+      if (isThumbExtended && isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp && Math.abs(thumbTip.y - indexTip.y) > 0.08) return SIGN_DICTIONARY.find(s => s.id === "LETTER_L");
+      if (isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp && !isThumbExtended) return SIGN_DICTIONARY.find(s => s.id === "ONE");
+      if (isPinkyUp && !isIndexUp && !isMiddleUp && !isRingUp && !isThumbExtended) return SIGN_DICTIONARY.find(s => s.id === "LETTER_I");
+      if (isThumbExtended && isPinkyUp && !isIndexUp && !isMiddleUp && !isRingUp) return SIGN_DICTIONARY.find(s => s.id === "CALL");
+      if (isThumbExtended && isIndexUp && isPinkyUp && !isMiddleUp && !isRingUp) return SIGN_DICTIONARY.find(s => s.id === "LOVE");
+      if (!isThumbExtended && isIndexUp && isPinkyUp && !isMiddleUp && !isRingUp) return SIGN_DICTIONARY.find(s => s.id === "ROCK");
+      if (isThumbExtended && !isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) {
+        return (thumbTip.y < wrist.y - 0.08) ? SIGN_DICTIONARY.find(s => s.id === "YES") : (thumbTip.y > wrist.y + 0.08 ? SIGN_DICTIONARY.find(s => s.id === "NO_DISLIKE") : null);
+      }
+      if (!isThumbExtended && !isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) return SIGN_DICTIONARY.find(s => s.id === "STOP");
+      if (dist(thumbTip, indexTip) > 0.08 && dist(thumbTip, indexTip) < 0.18 && !isIndexUp && !isMiddleUp) return SIGN_DICTIONARY.find(s => s.id === "LETTER_C");
+
+      return null;
+    }
+
+    // Hand tracking results callback
+    function onResults(results) {
+      if (!isCallActive || !isCameraEnabled) return;
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const recognizedSign = classifyGesture(results.multiHandLandmarks[0]);
+        if (recognizedSign) speak(recognizedSign);
+      }
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    hands.onResults(onResults);
+
+    // Start / Restart Camera
+    async function startCamera() {
+      try {
+        cameraInstance = new Camera(videoElement, {
+          onFrame: async () => {
+            if (isCallActive && isCameraEnabled) {
+              await hands.send({ image: videoElement });
+            }
+          },
+          width: 1280,
+          height: 720
+        });
+
+        await cameraInstance.start();
+        localStream = videoElement.srcObject;
+        isCallActive = true;
+        isCameraEnabled = true;
+        camOffPlaceholder.style.display = "none";
+        subtitle.style.display = "block";
+        subtitle.innerText = "Show your hand to begin signing...";
+      } catch (err) {
+        console.error("Camera start error:", err);
+        subtitle.innerText = "Camera permission denied or not available";
+      }
+    }
+
+    // Stop Camera Hardware Completely
+    function stopCameraHardware() {
+      if (cameraInstance) {
+        try { cameraInstance.stop(); } catch (e) {}
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+      videoElement.srcObject = null;
+    }
+
+    // --- End Call Handler ---
+    function endCall() {
+      if (!isCallActive) return;
+      isCallActive = false;
+
+      // 1. Cancel speech synthesis immediately
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      // 2. Shut off camera hardware
+      stopCameraHardware();
+
+      // 3. Update top badge
+      callStatusBadge.classList.add('ended');
+      callStatusText.innerText = "Call Ended";
+
+      // 4. Show "You left the call" screen
+      callEndedScreen.style.display = "flex";
+      subtitle.style.display = "none";
+
+      // 5. Reset sign guide highlights
+      document.querySelectorAll('.sign-item').forEach(el => el.classList.remove('active'));
+    }
+
+    // --- Rejoin Call Handler ---
+    function rejoinCall() {
+      callEndedScreen.style.display = "none";
+      callStatusBadge.classList.remove('ended');
+      callStatusText.innerText = "Call in Progress";
+      startCamera();
+    }
+
+    // --- Toggle Camera (Mute Video) ---
+    function toggleCamera() {
+      if (!isCallActive) return;
+      isCameraEnabled = !isCameraEnabled;
+
+      if (localStream) {
+        localStream.getVideoTracks().forEach(track => track.enabled = isCameraEnabled);
+      }
+
+      if (isCameraEnabled) {
+        camBtn.classList.remove('off');
+        camOffPlaceholder.style.display = "none";
+        subtitle.style.display = "block";
+      } else {
+        camBtn.classList.add('off');
+        camOffPlaceholder.style.display = "flex";
+        subtitle.style.display = "none";
+      }
+    }
+
+    // --- Toggle Mic (Mute Spoken Audio) ---
+    function toggleMic() {
+      if (!isCallActive) return;
+      isMicMuted = !isMicMuted;
+
+      if (isMicMuted) {
+        micBtn.classList.add('off');
+        micBtn.innerText = "🔇";
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      } else {
+        micBtn.classList.remove('off');
+        micBtn.innerText = "🎤";
+      }
+    }
+
+    // Event Listeners
+    endCallBtn.addEventListener('click', endCall);
+    rejoinBtn.addEventListener('click', rejoinCall);
+    camBtn.addEventListener('click', toggleCamera);
+    micBtn.addEventListener('click', toggleMic);
+
+    // Initial camera start
+    startCamera();
+  </script>
+</body>
+</html>
